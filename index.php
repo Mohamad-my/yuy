@@ -2,31 +2,45 @@
 // تضمين ملف الهيدر
 include('file/header.php');
 
-// التأكد من الاتصال بقاعدة البيانات
-if (!$conn) {
-    die("فشل الاتصال بقاعدة البيانات: " . mysqli_connect_error());
+// إعدادات الاتصال بـ Supabase
+$supabase_url = "https://nlszbtvnyniqdokpubbq.supabase.co"; 
+$supabase_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5sc3pidHZueW5pcWRva3B1YmJxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzAyMjM5NDYsImV4cCI6MjA0NTc5OTk0Nn0.nXmb3WE-cEZqTrqGANth0yI363S2_s_T812roEKTc4I";
+
+// جلب المنتجات من Supabase باستخدام cURL
+$ch = curl_init();
+curl_setopt($ch, CURLOPT_URL, $supabase_url . "/rest/v1/product");
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_HTTPHEADER, [
+    "Content-Type: application/json",
+    "apikey: " . $supabase_key,
+    "Authorization: Bearer " . $supabase_key
+]);
+
+$response = curl_exec($ch);
+curl_close($ch);
+
+// التحقق من أن البيانات تم جلبها بشكل صحيح
+if ($response) {
+    $products = json_decode($response, true); // تحويل JSON إلى مصفوفة
+} else {
+    $products = []; // إذا لم يتم جلب أي بيانات، تأكد من أن المتغير هو مصفوفة فارغة
 }
 ?>
 
 <!----product start------>
+
 <main>
     <?php
-    // استعلام جلب المنتجات
-    $query = "SELECT * FROM product";
-    $result = mysqli_query($conn, $query);
-
     // التحقق من وجود نتائج
-    if (mysqli_num_rows($result) > 0) {
+    if (count($products) > 0) {
         // حلقة لجلب كل منتج
-        while ($row = mysqli_fetch_assoc($result)) {
+        foreach ($products as $row) {
             // جلب قيم المنتج
             $proname = $row['proname'];
             $proprice = $row['proprice'];
             $prodescipr = $row['prodescipr'];
             $prouny = $row['prouny'];
             $proimg = $row['proimg'];
-
-            
     ?>
         <div class="product">
             <!-- عرض الصورة من قاعدة البيانات -->
@@ -67,10 +81,11 @@ if (!$conn) {
     }
     ?>
 </main>
+
 <!----product end------>
 
-<script>
 
+<script>
 let cartItems = []; // مصفوفة العناصر في السلة
 let cartCount = 0;  // عدد المنتجات في السلة
 
@@ -93,8 +108,8 @@ function addToCart(productId, productName, productPrice, quantity) {
         cartCount += qty;
         document.querySelector('.cart-count').innerText = cartCount;
 
-        // تقليل الكمية في قاعدة البيانات
-        updateProductQuantity(productId, -qty); // تقليل الكمية في قاعدة البيانات
+        // تقليل الكمية في Supabase
+        updateProductQuantity(productId, -qty);
 
         // حفظ السلة في localStorage
         localStorage.setItem('cartItems', JSON.stringify(cartItems)); // حفظ البيانات
@@ -105,26 +120,29 @@ function addToCart(productId, productName, productPrice, quantity) {
     }
 }
 
+// وظيفة لتحديث الكمية في Supabase
+async function updateProductQuantity(productId, change) {
+    const response = await fetch('https://<your-project-id>.supabase.co/rest/v1/product?id=eq.' + productId, {
+        method: 'PATCH',
+        headers: {
+            'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5sc3pidHZueW5pcWRva3B1YmJxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzAyMjM5NDYsImV4cCI6MjA0NTc5OTk0Nn0.nXmb3WE-cEZqTrqGANth0yI363S2_s_T812roEKTc4I',
+            'Authorization': 'Bearer <your-access-token>',
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation'
+        },
+        body: JSON.stringify({ prouny: change })
+    });
 
-// وظيفة لتحديث الكمية في قاعدة البيانات
-function updateProductQuantity(productId, change) {
-    // إجراء طلب AJAX لتحديث الكمية في قاعدة البيانات
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', 'update_quantity.php', true); // تأكد من أن لديك ملف update_quantity.php
-    xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-    xhr.onload = function() {
-        if (this.status === 200) {
-            console.log(this.responseText); // طباعة استجابة الخادم
-        }
-    };
-    xhr.send(`product_id=${productId}&change=${change}`);
+    if (!response.ok) {
+        console.error('Error updating quantity:', await response.json());
+    }
 }
 
 // إزالة المنتج من السلة
 function removeFromCart(productId) {
     const productIndex = cartItems.findIndex(item => item.id === productId);
     if (productIndex !== -1) {
-        // زيادة الكمية مرة أخرى في قاعدة البيانات
+        // زيادة الكمية مرة أخرى في Supabase
         updateProductQuantity(productId, cartItems[productIndex].quantity); // زيادة الكمية
 
         // تقليل عدد العناصر في السلة
@@ -135,7 +153,6 @@ function removeFromCart(productId) {
         updateCartItems(); // تحديث السلة
     }
 }
-
 
 // تحديث المنتجات في السلة
 function updateCartItems() {
@@ -153,8 +170,6 @@ function updateCartItems() {
     // تحديث إجمالي العناصر
     document.querySelector('.cart-summary .cart-count').innerText = cartItems.length;
 }
-
-
 
 // إظهار/إخفاء السلة
 document.addEventListener('DOMContentLoaded', function() {
@@ -201,10 +216,6 @@ function confermcart() {
         alert("تم إلغاء الطلب.");
     }
 }
-
-
-
-
 </script>
 
 </body>
